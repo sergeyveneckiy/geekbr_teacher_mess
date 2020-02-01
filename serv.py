@@ -1,32 +1,28 @@
-import socket
 import pymongo
 import sys
 import time
+import asyncio
+import websockets
+import re
 
+
+### PART 1. BLOCK WITH SETTINGS OF mongo and socket_server
 myclient = pymongo.MongoClient("mongodb://localhost:27017/")
 mydb = myclient["teacher_mess"]
 
 mycol = mydb["common_chat"]
-
-host = socket.gethostname()
-port = 5014
-
-my_serv_sock = socket.socket() 
-my_serv_sock.bind((host, port))
-
-my_serv_sock.listen(1) # how many client simutensule
-connect, client_ip = my_serv_sock.accept() 
-
-print("Connection from: " + str(client_ip))
-
+mycol_reg = mydb["regist_users"]
 
 flag_common = ''
 user_name = ''
-data_base = ''
 
-while True:
-    data = connect.recv(1024).decode()
+async def echo(websocket, path):
+  data_base = ''
+  async for data in websocket:
+    #data = connect.recv(1024).decode() # RECEIVE MESSGE FROM CLIENT!
+    data = data.decode()
     print(data)
+
     if not data:
         # if data is not received break
         break
@@ -43,8 +39,22 @@ while True:
           mydict = { "name": user_name, "message": mess_to_common}
           x = mycol.insert_one(mydict)
 
-       mydoc = mycol.find().skip(mycol.count() - 10)
+       query =   { 'message':{'$not':re.compile('hello')} }
+       #mydoc = mycol.find(query).skip(mycol.count() - 10)
+       mydoc = mycol.find(query)
        #mydoc = mycol.find() 
+       for x in mydoc:
+          data_base += f"{x['name']} : {x['message']} \n"
+
+    
+    if flag_common == 'registr': # registration
+       if len(mess_to_common) > 2:
+          mydict = { "name": user_name, "message": mess_to_common}
+          x = mycol_reg.insert_one(mydict)
+
+       #mydoc = mycol_reg.find().skip(mycol_reg.count() - 10)
+       mydoc = mycol_reg.find()
+       #mydoc = mycol_reg.find() 
        for x in mydoc:
           data_base += f"{x['name']} : {x['message']} \n"
 
@@ -65,8 +75,14 @@ while True:
           #print(f"{x['name']} : {x['message']}")
           data_base += f"{x['name']} : {x['message']} \n"
 
-    connect.send(str(data_base).encode())
+    # connect.send(str(data_base).encode()) # GET CLIENT MESSAGE
+    print(str(data_base).encode())
+    await websocket.send(str(data_base).encode())
 
-connect.close() 
+#connect.close() 
 
+asyncio.get_event_loop().run_until_complete(
+    websockets.serve(echo, 'localhost', 5014))
+
+asyncio.get_event_loop().run_forever()
 
